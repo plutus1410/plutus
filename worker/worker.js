@@ -1,13 +1,10 @@
 /* ============================================================
    PLUTUS — Cloudflare Worker proxy for Yahoo Finance (free tier)
-   ------------------------------------------------------------
    • Adds CORS headers so the GitHub Pages site can call Yahoo
    • Handles Yahoo's cookie + "crumb" handshake (needed for
-     quoteSummary: company profile, P/E, dividend, beta, etc.)
-   • Only forwards to Yahoo Finance hosts (not an open proxy)
+     quoteSummary: company profile, P/E, dividend, peers, etc.)
+   • Only forwards to Yahoo Finance data hosts (not an open proxy)
    • Caches responses at the edge for 10 minutes
-   Deploy: Cloudflare dashboard → Workers & Pages → Create →
-   "Hello World" worker → Edit code → paste this file → Deploy.
    ============================================================ */
 
 // After your site is live, lock this down, e.g. ['https://<user>.github.io']
@@ -16,7 +13,7 @@ const ALLOWED_HOSTS = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'];
 const CACHE_SECONDS = 600;
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
-let session = null; // { cookie, crumb, ts } — reused while the isolate is warm
+let session = null; // { cookie, crumb, ts }
 
 async function getSession(force) {
   if (!force && session && Date.now() - session.ts < 30 * 60e3) return session;
@@ -67,7 +64,7 @@ export default {
     if (cached) return new Response(cached.body, { status: cached.status, headers: { ...Object.fromEntries(cached.headers), ...cors, 'X-Cache': 'HIT' } });
 
     let res = await callYahoo(parsed.toString(), false);
-    if (res.status === 401 || res.status === 403) res = await callYahoo(parsed.toString(), true); // refresh crumb once
+    if (res.status === 401 || res.status === 403) res = await callYahoo(parsed.toString(), true);
 
     const body = await res.text();
     const out = new Response(body, { status: res.status, headers: { 'Content-Type': 'application/json', 'Cache-Control': `public, max-age=${CACHE_SECONDS}`, ...cors } });

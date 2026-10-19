@@ -1,21 +1,13 @@
 /* ============================================================
    PLUTUS — configuration
    ------------------------------------------------------------
-   Yahoo Finance has no official public API and blocks direct
-   browser calls (CORS). GitHub Pages can only host static files,
-   so requests are routed through a proxy.
-
-   RECOMMENDED: deploy /worker/worker.js to Cloudflare Workers
-   (free tier, ~2 minutes — see README) and paste its URL below.
-   The worker handles CORS + Yahoo's cookie/crumb handshake, which
-   is required for the company-profile & key-statistics data.
-
+   Yahoo Finance blocks direct browser calls (CORS), so requests
+   go through your Cloudflare Worker (see /worker/worker.js).
    If WORKER_URL is empty, the app falls back to public CORS
-   proxies. Those are rate-limited and unreliable, so treat them
-   as a demo mode only.
+   proxies — unreliable, demo only.
    ============================================================ */
 window.APP_CONFIG = {
- WORKER_URL: "https://plutus-proxy.plutus1410.workers.dev",
+  WORKER_URL: "https://plutus-proxy.plutus1410.workers.dev",
 
   PUBLIC_PROXIES: [
     "https://api.allorigins.win/raw?url=",

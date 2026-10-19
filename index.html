@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PLUTUS — Stock Health Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>PLUTUS — Your AI Stock Analysis Companion</title>
   <meta name="description" content="Search any listed company and see its financial health in plain English." />
   <meta name="theme-color" content="#000000" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='none' stroke='%233ea6ff' stroke-width='2'/><circle cx='16' cy='16' r='4' fill='%23fff'/></svg>" />
@@ -14,23 +14,23 @@
 
   <!-- ======================= TOP BAR ======================= -->
   <header class="topbar" id="topbar">
-    <a class="brand" href="#/" aria-label="Home"><span class="brand-orb"></span>PLUTUS</a>
+    <a class="brand" href="#/" aria-label="Home"><span class="brand-orb"></span><span class="brand-text">PLUTUS</span></a>
     <div class="mini-search hidden" id="miniSearchWrap">
-      <input id="miniSearch" type="text" placeholder="Search another company…" autocomplete="off" spellcheck="false" />
+      <svg class="mini-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="miniSearch" type="text" placeholder="Search another company…" autocomplete="off" spellcheck="false" aria-label="Search another company" />
       <ul class="suggest" id="miniSuggest" role="listbox"></ul>
     </div>
-    <span class="tag">FUNDAMENTALS · DECODED</span>
   </header>
 
   <!-- ======================= VIEW 1: SEARCH ======================= -->
   <main id="viewSearch" class="view view-search">
     <div class="horizon" aria-hidden="true"></div>
     <section class="hero">
-      <p class="eyebrow">Stock health telemetry</p>
+      <p class="eyebrow">Your AI stock analysis companion</p>
       <h1>Know the company<br />before you own it.</h1>
       <div class="search-wrap">
         <svg class="search-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input id="mainSearch" type="text" placeholder="Type a company name — e.g. Reliance, Infosys, HDFC Bank"
+        <input id="mainSearch" type="text" placeholder="Type a company name — e.g. Reliance, Infosys"
                autocomplete="off" spellcheck="false" aria-label="Search company" />
         <ul class="suggest" id="mainSuggest" role="listbox"></ul>
       </div>
@@ -43,7 +43,6 @@
         <button data-s="TATAMOTORS.NS">Tata Motors</button>
         <button data-s="ITC.NS">ITC</button>
       </div>
-      <p class="fine">Data: Yahoo Finance · Facts only — no buy or sell calls.</p>
     </section>
   </main>
 
@@ -61,7 +60,6 @@
     <p>PLUTUS presents publicly available data from Yahoo Finance for educational purposes. It is <strong>not investment advice</strong> and does not recommend buying, selling or holding any security. Data may be delayed or incomplete — verify with official company filings.</p>
   </footer>
 
-  <!-- Libraries (pinned versions, loaded from CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
   <script src="js/config.js"></script>

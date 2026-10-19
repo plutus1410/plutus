@@ -1,8 +1,8 @@
 /* ============================================================
    PLUTUS — analysis engine (pure functions, no DOM)
    Turns raw Yahoo Finance payloads into a clean company model,
-   health scores, badges, and plain-English strengths/weaknesses.
-   Nothing here produces a buy / sell / hold opinion.
+   health scores, badges, peer ranks and plain-English
+   strengths/weaknesses. Nothing here gives a buy/sell/hold view.
    ============================================================ */
 (function (root) {
   'use strict';
@@ -86,12 +86,13 @@
     'CashAndCashEquivalents', 'TotalAssets', 'DilutedAverageShares'];
   const QUARTERLY = ['TotalRevenue', 'NetIncome', 'NetIncomeCommonStockholders', 'GrossProfit', 'OperatingIncome', 'DilutedEPS', 'BasicEPS',
     'OperatingCashFlow', 'FreeCashFlow', 'CapitalExpenditure', 'TotalDebt', 'StockholdersEquity'];
+  const TIMESERIES_TYPES = [...ANNUAL.map((t) => 'annual' + t), ...QUARTERLY.map((t) => 'quarterly' + t)];
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  // Build an aligned period table (annual or quarterly) from timeseries data
+  // Aligned period table (annual or quarterly)
   function periodTable(ts, prefix, keep, labelFn) {
     const map = (k) => { const m = {}; (ts[prefix + k] || []).forEach((r) => (m[r.date] = r.v)); return m; };
-    const T = {}; ANNUAL.concat(QUARTERLY).forEach((k) => (T[k] = map(k)));
+    const T = {}; ANNUAL.forEach((k) => (T[k] = map(k)));
     const ds = new Set([...Object.keys(T.TotalRevenue), ...Object.keys(T.NetIncome), ...Object.keys(T.NetIncomeCommonStockholders)]);
     const dates = [...ds].sort().slice(-keep);
     const col = (k, alt) => dates.map((dt) => (isNum(T[k][dt]) ? T[k][dt] : alt && isNum(T[alt][dt]) ? T[alt][dt] : null));
@@ -100,11 +101,14 @@
     const ocf = col('OperatingCashFlow'), capex = col('CapitalExpenditure');
     const fcf = col('FreeCashFlow').map((v, i) => (isNum(v) ? v : isNum(ocf[i]) && isNum(capex[i]) ? ocf[i] + capex[i] : null));
     const ratio = (a, b) => a.map((v, i) => (isNum(v) && isNum(b[i]) && b[i] !== 0 ? v / b[i] : null));
-    return { labels: dates.map(labelFn), dates, revenue, netIncome, grossProfit, opIncome, eps, ocf, capex, fcf,
+    return {
+      labels: dates.map(labelFn), dates, revenue, netIncome, grossProfit, opIncome, eps, ocf, capex, fcf,
       debt: col('TotalDebt'), equity: col('StockholdersEquity'),
-      netMarginS: ratio(netIncome, revenue), grossMarginS: ratio(grossProfit, revenue), opMarginS: ratio(opIncome, revenue) };
+      curAssets: col('CurrentAssets'), curLiab: col('CurrentLiabilities'), totalAssets: col('TotalAssets'),
+      cash: col('CashAndCashEquivalents'), shares: col('DilutedAverageShares'),
+      netMarginS: ratio(netIncome, revenue), grossMarginS: ratio(grossProfit, revenue), opMarginS: ratio(opIncome, revenue)
+    };
   }
-  const TIMESERIES_TYPES = [...ANNUAL.map((t) => 'annual' + t), ...QUARTERLY.map((t) => 'quarterly' + t)];
 
   function buildModel(symbol, chart5y, chart1y, tsRes, sumRes, searchHit) {
     const w = parseChart(chart5y), d = parseChart(chart1y);
@@ -116,26 +120,9 @@
     const currency = price.currency || meta.currency || 'USD';
     const finCurrency = fd.financialCurrency || tsCur || currency;
 
-    // ----- annual table aligned by fiscal year end -----
-    const map = (k) => { const m = {}; (ts['annual' + k] || []).forEach((r) => (m[r.date] = r.v)); return m; };
-    const A = {}; ANNUAL.forEach((k) => (A[k] = map(k)));
-    const dateSet = new Set([...Object.keys(A.TotalRevenue), ...Object.keys(A.NetIncome), ...Object.keys(A.NetIncomeCommonStockholders)]);
-    const dates = [...dateSet].sort().slice(-5);
-    const col = (k, alt) => dates.map((dt) => (isNum(A[k][dt]) ? A[k][dt] : alt && isNum(A[alt][dt]) ? A[alt][dt] : null));
-    const years = dates.map((dt) => 'FY' + dt.slice(2, 4));
-
-    const revenue = col('TotalRevenue'), netIncome = col('NetIncome', 'NetIncomeCommonStockholders');
-    const grossProfit = col('GrossProfit'), opIncome = col('OperatingIncome');
-    const eps = col('DilutedEPS', 'BasicEPS');
-    const ocf = col('OperatingCashFlow'), capex = col('CapitalExpenditure');
-    let fcf = col('FreeCashFlow');
-    fcf = fcf.map((v, i) => (isNum(v) ? v : isNum(ocf[i]) && isNum(capex[i]) ? ocf[i] + capex[i] : null));
-    const debt = col('TotalDebt'), equity = col('StockholdersEquity');
-    const curAssets = col('CurrentAssets'), curLiab = col('CurrentLiabilities'), totalAssets = col('TotalAssets'), cash = col('CashAndCashEquivalents');
-    const shares = col('DilutedAverageShares');
-
-    const ratio = (a, b) => a.map((v, i) => (isNum(v) && isNum(b[i]) && b[i] !== 0 ? v / b[i] : null));
-    const netMarginS = ratio(netIncome, revenue), grossMarginS = ratio(grossProfit, revenue), opMarginS = ratio(opIncome, revenue);
+    const AN = periodTable(ts, 'annual', 5, (dt) => 'FY' + dt.slice(2, 4));
+    const QT = periodTable(ts, 'quarterly', 8, (dt) => `${MON[+dt.slice(5, 7) - 1]} '${dt.slice(2, 4)}`);
+    const { revenue, netIncome, opIncome, eps, fcf, debt, equity, curAssets, curLiab, totalAssets, shares, netMarginS, grossMarginS, opMarginS } = AN;
 
     // ----- price -----
     const lastPrice = raw(price.regularMarketPrice) ?? meta.regularMarketPrice ?? (d && last(d.pts) ? last(d.pts).v : null);
@@ -147,7 +134,6 @@
     const high52 = raw(sd.fiftyTwoWeekHigh) ?? meta.fiftyTwoWeekHigh ?? (dailyVals.length ? Math.max(...dailyVals) : null);
     const low52 = raw(sd.fiftyTwoWeekLow) ?? meta.fiftyTwoWeekLow ?? (dailyVals.length ? Math.min(...dailyVals) : null);
 
-    // returns / risk
     let ret1y = null, vol = null, maxDD = null;
     if (dailyVals.length > 20) {
       ret1y = dailyVals[dailyVals.length - 1] / dailyVals[0] - 1;
@@ -170,7 +156,7 @@
     const pb = raw(ks.priceToBook);
 
     // P/E history: weekly price ÷ latest annual EPS known at that date
-    let peHistory = [];
+    const peHistory = [];
     const epsRows = (ts.annualDilutedEPS || ts.annualBasicEPS || []).filter((r) => isNum(r.v));
     if (w && sameCur && epsRows.length) {
       const epsTs = epsRows.map((r) => ({ t: Date.parse(r.date), v: r.v }));
@@ -187,9 +173,9 @@
     const niLast = lastNum(netIncome), niPrev = prevNum(netIncome);
     const netMargin = lastNum(netMarginS), netMarginPrev = prevNum(netMarginS);
     const eqLast = lastNum(equity), debtLast = lastNum(debt);
-    let roe = isNum(niLast) && isNum(eqLast) && eqLast > 0 ? niLast / eqLast : raw(fd.returnOnEquity);
-    let de = isNum(debtLast) && isNum(eqLast) && eqLast > 0 ? debtLast / eqLast : (isNum(raw(fd.debtToEquity)) ? raw(fd.debtToEquity) / 100 : null);
-    let currentRatio = isNum(lastNum(curAssets)) && isNum(lastNum(curLiab)) && lastNum(curLiab) > 0 ? lastNum(curAssets) / lastNum(curLiab) : raw(fd.currentRatio);
+    const roe = isNum(niLast) && isNum(eqLast) && eqLast > 0 ? niLast / eqLast : raw(fd.returnOnEquity);
+    const de = isNum(debtLast) && isNum(eqLast) && eqLast > 0 ? debtLast / eqLast : (isNum(raw(fd.debtToEquity)) ? raw(fd.debtToEquity) / 100 : null);
+    const currentRatio = isNum(lastNum(curAssets)) && isNum(lastNum(curLiab)) && lastNum(curLiab) > 0 ? lastNum(curAssets) / lastNum(curLiab) : raw(fd.currentRatio);
     const equityToAssets = isNum(eqLast) && isNum(lastNum(totalAssets)) ? eqLast / lastNum(totalAssets) : null;
     const fcfLast = lastNum(fcf);
     const fcfMargin = isNum(fcfLast) && isNum(revLast) && revLast > 0 ? fcfLast / revLast : null;
@@ -214,14 +200,15 @@
     let niUpYears = 0, niPairs = 0;
     for (let i = 1; i < netIncome.length; i++) if (isNum(netIncome[i]) && isNum(netIncome[i - 1])) { niPairs++; if (netIncome[i] > netIncome[i - 1]) niUpYears++; }
     const fcfPositiveYears = fcf.filter((v) => isNum(v) && v > 0).length, fcfYears = fcf.filter(isNum).length;
-    const pos52 = isNum(lastPrice) && isNum(high52) && isNum(low52) && high52 > low52 ? (lastPrice - low52) / (high52 - low52) : null;
+    const pos52 = isNum(lastPrice) && isNum(high52) && isNum(low52) && high52 > low52 ? clamp((lastPrice - low52) / (high52 - low52), 0, 1) : null;
 
     const m = {
       symbol, currency, finCurrency, sameCur,
       name: price.longName || price.shortName || meta.longName || meta.shortName || (searchHit && searchHit.name) || symbol,
       exchange: price.exchangeName || meta.fullExchangeName || meta.exchangeName || (searchHit && searchHit.exch) || '',
       sector, industry, isFinancial,
-      summary: ap.longBusinessSummary || '', website: ap.website || '', employees: ap.fullTimeEmployees || null, country: ap.country || '',
+      summary: ap.longBusinessSummary || '', website: ap.website || '', employees: ap.fullTimeEmployees || null,
+      country: ap.country || '', city: ap.city || '',
       price: lastPrice, change, changePct, marketCap, high52, low52, pos52,
       pe, fwdPe, pb, peMedian, peHistory, negEarnings, ttmEps, divYield, beta,
       roe, de, currentRatio, equityToAssets, fcfLast, fcfMargin,
@@ -230,8 +217,7 @@
       ret1y, ret5y, vol, maxDD,
       nYears, profitableYears, niYears, revUpYears, revPairs, niUpYears, niPairs, fcfPositiveYears, fcfYears,
       priceWeekly: w ? w.pts : [], priceDaily: d ? d.pts : [],
-      quarterly: periodTable(ts, 'quarterly', 8, (dt) => `${MON[+dt.slice(5, 7) - 1]} '${dt.slice(2, 4)}`),
-      annual: { labels: years, years, dates, revenue, netIncome, grossProfit, opIncome, eps, ocf, capex, fcf, debt, equity, cash, netMarginS, grossMarginS, opMarginS },
+      annual: AN, quarterly: QT,
       hasFundamentals: nYears > 0,
       hasProfile: !!(S.price || S.assetProfile)
     };
@@ -250,15 +236,15 @@
         score: avg([lin(m.revCAGR, -0.05, 0.15), lin(isNum(m.niCAGR) ? m.niCAGR : m.niYoY, -0.10, 0.20)]) },
       { key: 'profit', name: 'Profitability', hint: 'How much of every sale turns into profit',
         score: avg([lin(m.netMargin, 0, 0.20), lin(m.roe, 0, 0.22), m.isFinancial ? null : lin(m.opMargin, 0, 0.25)]) },
-      { key: 'strength', name: 'Balance Sheet', hint: 'How safely the company is funded (debt vs. own money)',
+      { key: 'strength', name: 'Balance Sheet', hint: 'How safely the company is funded',
         score: m.isFinancial
           ? avg([lin(m.equityToAssets, 0.04, 0.15)])
           : avg([lin(m.de, 2, 0), lin(m.currentRatio, 0.8, 2), isNum(m.fcfLast) ? (m.fcfLast > 0 ? 85 : 15) : null]) },
-      { key: 'value', name: 'Price Tag', hint: 'Cheaper vs. profits scores higher; pricier scores lower',
+      { key: 'value', name: 'Price Tag', hint: 'Cheaper vs. profits scores higher',
         score: m.negEarnings ? 10 : avg([lin(m.pe, 60, 8), isNum(m.peMedian) && isNum(m.pe) ? lin(m.pe / m.peMedian, 1.5, 0.7) : null]) },
-      { key: 'stability', name: 'Stability', hint: 'How calm the share price has been over the past year',
+      { key: 'stability', name: 'Stability', hint: 'How calm the share price has been',
         score: avg([lin(m.vol, 0.6, 0.15), lin(m.maxDD, -0.5, -0.08)]) },
-      { key: 'track', name: 'Track Record', hint: 'How consistently it has grown and stayed profitable',
+      { key: 'track', name: 'Track Record', hint: 'How consistently it grows and stays profitable',
         score: avg([m.niYears ? (m.profitableYears / m.niYears) * 100 : null, m.revPairs ? (m.revUpYears / m.revPairs) * 100 : null]) }
     ];
     pillars.forEach((p) => (p.score = isNum(p.score) ? Math.round(p.score) : null));
@@ -288,7 +274,6 @@
     const c = m.finCurrency, sym = curSym(c).trim() || c;
     const add = (arr, title, text, metric) => arr.push({ title, text, metric });
 
-    // Growth
     if (isNum(m.revCAGR)) {
       const n = m.revPairs;
       if (m.revCAGR >= 0.10) add(S, 'Sales are growing fast', `Revenue has grown about ${fmtPct(m.revCAGR, 0)} a year over the last ${n} years — customers are buying more and more.`, fmtPct(m.revCAGR, 1, true) + ' / yr');
@@ -303,7 +288,6 @@
       add(W, 'The company is losing money', `It reported a net loss of ${fmtMoney(Math.abs(m.niLast), c)} in the latest financial year.`, 'Loss');
     }
 
-    // Profitability
     if (isNum(m.netMargin)) {
       const per100 = (m.netMargin * 100).toFixed(m.netMargin * 100 < 10 ? 1 : 0);
       if (m.netMargin >= 0.15) add(S, 'Keeps a big slice of every sale', `Out of every ${sym}100 of sales, about ${sym}${per100} is left as profit after all costs.`, fmtPct(m.netMargin) + ' margin');
@@ -321,9 +305,7 @@
     if (m.niYears >= 3 && m.profitableYears === m.niYears) add(S, 'Profitable every year', `Made a profit in all ${m.niYears} years of reported data.`, `${m.niYears}/${m.niYears} yrs`);
     else if (m.niYears >= 3 && m.profitableYears < m.niYears) add(W, 'Profits are not consistent', `Made a loss in ${m.niYears - m.profitableYears} of the last ${m.niYears} reported years.`, `${m.profitableYears}/${m.niYears} yrs`);
 
-    // Balance sheet
     if (m.isFinancial) {
-      // leverage is normal for banks/insurers — judge capital cushion instead
       if (isNum(m.equityToAssets)) {
         if (m.equityToAssets >= 0.12) add(S, 'Strong capital cushion', `Shareholders' own money funds about ${fmtPct(m.equityToAssets, 0)} of total assets (borrowing is normal for financial companies).`, fmtPct(m.equityToAssets, 0));
         else if (m.equityToAssets < 0.07) add(W, 'Thin capital cushion', `Shareholders' own money funds only about ${fmtPct(m.equityToAssets, 1)} of total assets.`, fmtPct(m.equityToAssets, 1));
@@ -341,7 +323,6 @@
       else if (isNum(m.fcfLast) && m.fcfLast < 0) add(W, 'Burning cash', `Spent ${fmtMoney(Math.abs(m.fcfLast), c)} more than it brought in last year after investments.`, fmtMoney(m.fcfLast, c));
     }
 
-    // Valuation (facts only)
     if (m.negEarnings) add(W, 'No earnings to value it on', 'Because the company is not currently profitable, the usual price-to-earnings yardstick does not work.', 'P/E n/a');
     else if (isNum(m.pe)) {
       if (isNum(m.peMedian) && m.pe > m.peMedian * 1.25) add(W, 'Priced higher than its own history', `Investors now pay ${fmtX(m.pe, 1)} its yearly profit, above its 5-year typical level of ${fmtX(m.peMedian, 1)}.`, fmtX(m.pe, 1) + ' P/E');
@@ -350,7 +331,6 @@
       else if (m.pe < 12) add(S, 'Modest price tag', `The share price equals about ${m.pe.toFixed(0)} years of current profit.`, fmtX(m.pe, 1) + ' P/E');
     }
 
-    // Income & risk
     if (isNum(m.divYield) && m.divYield >= 0.02) add(S, 'Pays shareholders regularly', `Pays a yearly dividend of about ${fmtPct(m.divYield, 1)} of the share price.`, fmtPct(m.divYield, 1) + ' yield');
     if (isNum(m.vol)) {
       if (m.vol >= 0.45) add(W, 'Bumpy ride', `The share price swings a lot — typical yearly movement is around ±${fmtPct(m.vol, 0)}.`, fmtPct(m.vol, 0) + ' vol');
@@ -414,21 +394,18 @@
       const vals = rows.filter((r) => isNum(r[mt.key]) && !(mt.key === 'pe' && r[mt.key] <= 0));
       const sorted = [...vals].sort((a, b) => (mt.better === 'high' ? b[mt.key] - a[mt.key] : a[mt.key] - b[mt.key]));
       const pos = sorted.indexOf(main);
-      const med = median(peers.map((r) => r[mt.key]));
-      return { ...mt, value: main[mt.key], rank: pos >= 0 ? pos + 1 : null, of: sorted.length, median: med, leader: sorted[0] || null };
+      return { ...mt, value: main[mt.key], rank: pos >= 0 ? pos + 1 : null, of: sorted.length, median: median(peers.map((r) => r[mt.key])), leader: sorted[0] || null };
     });
-    const sym = curSym(main.currency).trim() || '';
     const S = [], W = [];
     for (const r of ranks) {
-      if (r.rank == null || r.of < 3 || !isNum(r.median)) continue;
+      if (r.key === 'marketCap' || r.rank == null || r.of < 3 || !isNum(r.median)) continue;
       const v = r.value, m = r.median;
       const show = (x) => (r.fmt === 'pct' ? fmtPct(x, 1) : r.fmt === 'x' ? fmtX(x, 1) : fmtMoney(x, main.currency));
-      const metric = `#${r.rank} of ${r.of}`;
-      if (r.key === 'marketCap') continue;
       const better = r.better === 'high' ? v > m : v < m;
       const gapBig = r.fmt === 'pct' ? Math.abs(v - m) >= 0.03 : Math.abs(v / m - 1) >= 0.2;
       if (!gapBig) continue;
       const text = `${r.label} is ${show(v)} vs. a peer median of ${show(m)} (ranked ${r.rank} of ${r.of} among similar companies).`;
+      const metric = `#${r.rank} of ${r.of}`;
       if (r.key === 'pe') (better ? S : W).push({ title: better ? 'Cheaper than its peers' : 'Pricier than its peers', text, metric });
       else if (r.key === 'de') (better ? S : W).push({ title: better ? 'Less debt than its peers' : 'More debt than its peers', text, metric });
       else (better ? S : W).push({ title: `${better ? 'Beats' : 'Trails'} peers on ${r.name.toLowerCase()}`, text, metric });
